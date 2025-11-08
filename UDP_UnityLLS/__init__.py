@@ -13,26 +13,18 @@ from . import UDP_Server
 from.import mesh_sender
 
 
-class UDP_OT_Start(bpy.types.Operator):
+class UDP_OT_SendData(bpy.types.Operator):
     """Start UDP Server"""
-    bl_idname = "udp.start_server"
-    bl_label = "Start UDP Server"
+    bl_idname = "udp.send_data"
+    bl_label = "Send Mesh Data"
 
     def execute(self, context):
         UDP_Server.setup_sockets()
-        mesh_sender.send_mesh_data()
-        self.report({'INFO'}, "UDP Server started and mesh sent")
-        return {'FINISHED'}
-
-
-class UDP_OT_Stop(bpy.types.Operator):
-    """Stop UDP Server"""
-    bl_idname = "udp.stop_server"
-    bl_label = "Stop UDP Server"
-
-    def execute(self, context):
-        UDP_Server.stop_communication()
-        self.report({'INFO'}, "UDP Server stopped")
+        try:
+            mesh_sender.send_mesh_data()
+        finally:
+            UDP_Server.stop_communication()
+        self.report({'INFO'}, "Mesh data sent via UDP")
         return {'FINISHED'}
 
 
@@ -45,12 +37,10 @@ class UDP_PT_Panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
-        layout.operator("udp.start_server", icon="PLAY")
-        layout.operator("udp.stop_server", icon="PAUSE")
-
-
+        layout.operator("udp.send_data", icon="PLAY")
+     
 # Registration
-classes = (UDP_OT_Start, UDP_OT_Stop, UDP_PT_Panel)
+classes = (UDP_OT_SendData, UDP_PT_Panel)
 
 def register():
     for cls in classes:
