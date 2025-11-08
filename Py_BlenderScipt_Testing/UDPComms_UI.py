@@ -6,7 +6,7 @@ import json
 #Add Button to run
 #Add Button to Stop
 
-script_dir = r"C:\Users\rfoster\Documents\2025NeumontClasses\Capstone\25-26_CapstoneProject\Py_BlenderScipt_Testing"
+script_dir = r"C:\Users\rfoster\Documents\2025NeumontClasses\Capstone\25-26_CapstoneProject\UDP_UnityLLS"
 if script_dir not in sys.path:
     sys.path.append(script_dir)
 #import Object_Move_Detection
@@ -40,7 +40,12 @@ if mesh:
     
         
         
+        
+        
         # Convert to JSON string
+
+        
+        
 message = json.dumps({
     "name": mesh.name,
     "vertices": verts,
