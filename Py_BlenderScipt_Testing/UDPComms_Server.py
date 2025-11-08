@@ -34,6 +34,7 @@ import bpy
 import socket
 import threading
 import time
+import json
 
 # Configuration
 UDP_IP = "127.0.0.1"
@@ -68,7 +69,11 @@ def receive_data():
     
     print("Receive thread started")
     
+    
+    
     while running:
+        obj = bpy.context.active_object
+        
         try:
             data, addr = sock_rx.recvfrom(1024)
             latest_data = data.decode('utf-8')
@@ -126,12 +131,29 @@ def stop_communication():
 # Example usage with Blender timer
 counter = 0
 
+
+def get_mesh():
+    obj = bpy.context.active_object
+    if obj and obj.type == 'MESH':
+        mesh = obj.data
+        return mesh
+    return None
+    
+
 def communication_loop():
     """Main communication loop - called by Blender timer"""
     global counter, latest_data
     
     # Send data to Unity
-    message = bpy.context.scene
+    mesh = get_mesh()
+    
+    verts = [(v.co.x, v.co.y, v.co.z) for v in mesh.vertices]
+        
+        # Convert to JSON string
+    message = json.dumps({"mesh": mesh.name, "vertices": verts})
+    send_data(message)  # Uses the original send_data (string)
+    
+    
     send_data(message)
     counter += 1
     
@@ -179,5 +201,5 @@ if __name__ == "__main__":
     register()
     
     # Auto-start (comment out if you want manual control)
-    start_communication()
-    bpy.app.timers.register(communication_loop)
+   # start_communication()
+   # bpy.app.timers.register(communication_loop)
