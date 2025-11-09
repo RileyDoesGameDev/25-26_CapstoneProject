@@ -8,7 +8,7 @@ import json
 from . import UDP_Server
 
 def get_mesh():
-    obj = bpy.data.objects.get('Cube')
+    obj = bpy.data.objects
     if obj and obj.type == 'MESH':
         return obj.data
     return None
