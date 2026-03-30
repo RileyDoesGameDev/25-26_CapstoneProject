@@ -3,88 +3,156 @@ import os
 import sys
 import json
 
-#Add Button to run
-#Add Button to Stop
+# Add Button to run
+# Add Button to Stop
 
 script_dir = r"C:\Users\rfoster\Documents\2025NeumontClasses\Capstone\25-26_CapstoneProject\UDP_UnityLLS"
 if script_dir not in sys.path:
     sys.path.append(script_dir)
-#import Object_Move_Detection
+
 import UDP_Server
 
-#previoius_ObjData = []
+MAX_CHUNK_SIZE = 200  # number of items per chunk (safe for UDP)
 
 
-#def Compare_Prev_ObjData():
     
 
+def chunk_list(lst, size):
+    """Yield successive chunks from list."""
+    for i in range(0, len(lst), size):
+        yield lst[i:i + size]
 
-def get_meshes():
-    meshes = []
-    for obj in bpy.context.scene.objects:
-        if obj.type == 'MESH':
-            meshes.append(obj.data)
-    return meshes
-   
 
-mesh = get_meshes()
-data = []
-if mesh:
-    for obj in mesh:
-        obj.update()
-        # Get vertices in world space 
-        verts = [{"x": v.co.x, "y": v.co.z, "z": v.co.y} for v in obj.vertices]
+def send_mesh(object):
+    obj = object.data
+    obj.update()
+
+    # Vertices (swapped Y/Z for Unity)
+    vertices = [{"x": v.co.x, "y": v.co.z, "z": v.co.y} for v in obj.vertices]
+
+    # Triangles and per-triangle material index (triangle order via loop_triangles)
+    obj.calc_loop_triangles()
+    triangles = []
+    material_indices = []
+    for tri in obj.loop_triangles:
+        triangles.extend([tri.vertices[0], tri.vertices[1], tri.vertices[2]])
+        material_indices.append(object.data.polygons[tri.polygon_index].material_index)
+
+    # Normals (swapped Y/Z to match vertex ordering)
+    normals = [{"x": v.normal.x, "y": v.normal.z, "z": v.normal.y} for v in obj.vertices]
+
+    # Materials (fix spelling and send useful fields)
+    materials = []
+
+    for mat_slot in object.material_slots:
+        mat = mat_slot.material
+
+        if mat is None:
+            materials.append({"name": None, "diffuse_color": [1,1,1,1], "use_nodes": False})
+            continue
+
+        if mat.use_nodes:
+            bsdf = mat.node_tree.nodes.get("Principled BSDF")
+            if bsdf:
+                col = list(bsdf.inputs["Base Color"].default_value)
+            else:
+                col = [1,1,1,1]
+        else:
+            col = list(mat.diffuse_color)
     
-        # Get triangles - Blender uses polygons, so we need to triangulate
-        # Ensure mesh has triangulated faces
-        obj.calc_loop_triangles()
-        triangles = []
-        for tri in obj.loop_triangles:
-            triangles.extend([tri.vertices[0], tri.vertices[1], tri.vertices[2]])
-    
-        # Get normals per vertex
-        normals = [{"x": v.normal.x, "y": v.normal.z, "z": v.normal.y} for v in obj.vertices]    
-        
-        
-        
-        # Convert to JSON string
-        
-        
-        chunk_data = []
+        materials.append({
+            "name": mat.name,
+            "diffuse_color": col,
+            "use_nodes": mat.use_nodes,
+        })
 
-        chunk_data.append({
-            "chunk": 1,
-            "total": 3,
+        
+        #if mat is None:
+         #   materials.append({"name": None, "diffuse_color": [1.0, 1.0, 1.0, 1.0], "use_nodes": False})
+        #else:
+            # ensure diffuse_color is serializable (RGBA)
+         #   col = list(mat.diffuse_color) if hasattr(mat, "diffuse_color") else [1.0, 1.0, 1.0, 1.0]
+            
+
+
+
+    # chunk lists for UDP safety
+    vert_chunks = list(chunk_list(vertices, MAX_CHUNK_SIZE))
+    tri_chunks = list(chunk_list(triangles, MAX_CHUNK_SIZE * 3))
+    norm_chunks = list(chunk_list(normals, MAX_CHUNK_SIZE))
+    #mat_chunks = list(chunk_list(materials, MAX_CHUNK_SIZE)
+    matInd_chunks = list(chunk_list(material_indices, MAX_CHUNK_SIZE))
+    # Build packets list so we compute total correctly
+    packets = []
+
+    # Vertices packets
+    for chunk in vert_chunks:
+        packets.append({
             "type": "vertices",
-            "data": verts
+            "data": chunk
         })
 
-        chunk_data.append({
-            "chunk": 2,
-            "total": 3,
+    # Triangle packets (intData)
+    for chunk in tri_chunks:
+        packets.append({
             "type": "triangles",
-            "data": triangles
+            "intData": chunk
         })
 
-        chunk_data.append({
-            "chunk": 3,
-            "total": 3,
+    # Normal packets
+    for chunk in norm_chunks:
+        packets.append({
             "type": "normals",
-            "data": normals
+            "data": chunk
         })
-        
-for item in chunk_data:              
-    print(item)
 
-
-UDP_Server.setup_sockets()
-for item in chunk_data: 
-    json_string = json.dumps(item)             
-    UDP_Server.send_data(json_string)
+    # Single materials packet (materials are usually few; send once)
     
-UDP_Server.stop_communication()
+    
+    packets.append({
+        "type": "materials",
+        "materialData": materials
+    })
+
+    # Single material-index packet (one int per triangle)
+    for chunk in matInd_chunks:
+        packets.append({
+            "type": "material_index",
+            "intData": chunk
+        })
+
+    # Now send with correct chunk numbering and total
+    total_chunks = len(packets)
+    UDP_Server.setup_sockets()
+    chunk_id = 1
+
+    for pkt_body in packets:
+        pkt = {
+            "name": obj.name,
+            "chunk": chunk_id,
+            "total": total_chunks,
+            "type": pkt_body["type"]
+        }
+        # copy appropriate fields
+        if pkt_body["type"] == "vertices" or pkt_body["type"] == "normals":
+            pkt["data"] = pkt_body["data"]
+        elif pkt_body["type"] == "triangles" or pkt_body["type"] == "material_index":
+            pkt["intData"] = pkt_body["intData"]
+        elif pkt_body["type"] == "materials":
+            pkt["materialData"] = pkt_body["materialData"]
+
+        UDP_Server.send_data(json.dumps(pkt))
+        chunk_id += 1
+
+    UDP_Server.stop_communication()
 
 
 
+def main():
+    for obj in bpy.context.scene.objects:
+        if obj.type == "MESH":
+            send_mesh(obj)
 
 
+if __name__ == "__main__":
+    main()

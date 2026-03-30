@@ -94,6 +94,9 @@ def send_data(message):
         sock_tx.sendto(message.encode('utf-8'), (UDP_IP, PORT_TX))
     except Exception as e:
         print(f"Error sending: {e}")
+        return 
+
+
 
 def start_communication():
     """Start the UDP communication"""

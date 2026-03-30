@@ -21,10 +21,9 @@ class UDP_OT_SendData(bpy.types.Operator):
     def execute(self, context):
         UDP_Server.setup_sockets()
         try:
-            mesh_sender.send_mesh_data()
+            mesh_sender.main()
         finally:
-            UDP_Server.stop_communication()
-        self.report({'INFO'}, "Mesh data sent via UDP")
+            self.report({'INFO'}, "Mesh data sent via UDP")
         return {'FINISHED'}
 
 
